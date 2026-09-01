@@ -1,0 +1,18 @@
+# Secrets — ne jamais versionner les clés API
+.env
+
+# Fichiers Python générés automatiquement
+__pycache__/
+*.pyc
+*.pyo
+
+# Cache de pytest
+.pytest_cache/
+
+# Environnement virtuel Python
+.venv/
+venv/
+
+# Fichiers d'IDE
+.vscode/
+.idea/
