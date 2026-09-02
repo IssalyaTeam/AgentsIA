@@ -5,7 +5,7 @@ Tout connecteur doit produire un ProspectInput ; le moteur ne connaît
 que ce format.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -69,6 +69,27 @@ class ResultatRedFlags:
 
 
 @dataclass
+class Dirigeant:
+    nom: str
+    fonction: str
+    date_nomination: str  # format "AAAA-MM-JJ", chaîne vide si inconnue
+
+
+@dataclass
+class Etablissement:
+    nom_ou_enseigne: str
+    ville: str
+    est_siege: bool
+
+
+@dataclass
+class ExerciceFinancier:
+    annee: int
+    chiffre_affaires_euros: int | None
+    resultat_net_euros: int | None
+
+
+@dataclass
 class ContexteProspect:
     """Informations textuelles libres, utilisées pour rédiger la synthèse.
 
@@ -84,6 +105,13 @@ class ContexteProspect:
     appartient_a_un_groupe: bool
     reponses_formulaire: dict[str, str]
     resume_site_web: str
+    forme_juridique: str = ""
+    capital_social_euros: int | None = None
+    dirigeants: list[Dirigeant] = field(default_factory=list)
+    etablissements: list[Etablissement] = field(default_factory=list)
+    historique_financier: list[ExerciceFinancier] = field(default_factory=list)
+    procedures_collectives: list[str] = field(default_factory=list)
+    changements_recents: list[str] = field(default_factory=list)
 
 
 @dataclass
