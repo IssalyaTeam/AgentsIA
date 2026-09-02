@@ -5,9 +5,20 @@ est testée avec un client Google simulé (Mock) : aucun appel réseau réel,
 donc aucun besoin du marqueur `api`.
 """
 
+import datetime
+import json
 from unittest.mock import MagicMock
 
-from connectors.google_sheets import PLAGE_PAR_DEFAUT, enregistrer_fiche, formater_ligne_fiche
+from connectors.google_sheets import (
+    ONGLET_TALLY_EN_ATTENTE,
+    PLAGE_PAR_DEFAUT,
+    PLAGE_TALLY_EN_ATTENTE,
+    chercher_et_supprimer_reponse_tally,
+    enregistrer_fiche,
+    enregistrer_reponse_tally_en_attente,
+    formater_ligne_fiche,
+    purger_reponses_tally_expirees,
+)
 from engine.schema import (
     FicheSynthese,
     HypothesesQualification,
@@ -90,3 +101,126 @@ def test_enregistrer_fiche_appelle_lapi_avec_la_bonne_plage_et_les_bonnes_donnee
     assert kwargs["body"]["values"][0][1] == "Cabinet Delacroix & Associés"
 
     service_simule.spreadsheets.return_value.values.return_value.append.return_value.execute.assert_called_once()
+
+
+# --- enregistrer_reponse_tally_en_attente ---------------------------------
+
+def test_enregistrer_reponse_tally_en_attente_appelle_append_avec_les_bonnes_donnees(monkeypatch):
+    monkeypatch.setenv("GOOGLE_SHEETS_SPREADSHEET_ID", "id-de-test")
+
+    service_simule = MagicMock()
+    enregistrer_reponse_tally_en_attente(
+        email="alex@example.com",
+        nom_entreprise="TOMCO",
+        reponses_formulaire={"Q1": "R1"},
+        service=service_simule,
+    )
+
+    append_mock = service_simule.spreadsheets.return_value.values.return_value.append
+    append_mock.assert_called_once()
+    _, kwargs = append_mock.call_args
+
+    assert kwargs["spreadsheetId"] == "id-de-test"
+    assert kwargs["range"] == PLAGE_TALLY_EN_ATTENTE
+    ligne = kwargs["body"]["values"][0]
+    assert ligne[1] == "alex@example.com"
+    assert ligne[2] == "TOMCO"
+    assert json.loads(ligne[3]) == {"Q1": "R1"}
+
+
+# --- chercher_et_supprimer_reponse_tally ----------------------------------
+
+def _configurer_lignes_tally_en_attente(service_simule, lignes):
+    """lignes : liste de [date, email, entreprise, reponses_json], sans
+    en-tête (ajouté automatiquement)."""
+    entetes = ["Date", "Email", "Entreprise", "Réponses"]
+    service_simule.spreadsheets.return_value.values.return_value.get.return_value.execute.return_value = {
+        "values": [entetes] + lignes
+    }
+    service_simule.spreadsheets.return_value.get.return_value.execute.return_value = {
+        "sheets": [{"properties": {"title": ONGLET_TALLY_EN_ATTENTE, "sheetId": 42}}]
+    }
+
+
+def test_chercher_et_supprimer_reponse_tally_trouve_et_supprime(monkeypatch):
+    monkeypatch.setenv("GOOGLE_SHEETS_SPREADSHEET_ID", "id-de-test")
+    service_simule = MagicMock()
+    _configurer_lignes_tally_en_attente(
+        service_simule,
+        [
+            ["2026-08-20T10:00:00+00:00", "autre@example.com", "Autre SAS", "{}"],
+            ["2026-08-24T08:00:00+00:00", "alex@example.com", "TOMCO", json.dumps({"Q1": "R1"})],
+        ],
+    )
+
+    resultat = chercher_et_supprimer_reponse_tally("alex@example.com", service=service_simule)
+
+    assert resultat == {"nom_entreprise": "TOMCO", "reponses_formulaire": {"Q1": "R1"}}
+
+    batch_mock = service_simule.spreadsheets.return_value.batchUpdate
+    batch_mock.assert_called_once()
+    _, kwargs = batch_mock.call_args
+    requete = kwargs["body"]["requests"][0]["deleteDimension"]["range"]
+    assert requete["sheetId"] == 42
+    assert requete["startIndex"] == 2  # ligne trouvée (index 2 : après l'en-tête et la 1re ligne)
+    assert requete["endIndex"] == 3
+
+
+def test_chercher_et_supprimer_reponse_tally_retourne_none_si_absent(monkeypatch):
+    monkeypatch.setenv("GOOGLE_SHEETS_SPREADSHEET_ID", "id-de-test")
+    service_simule = MagicMock()
+    _configurer_lignes_tally_en_attente(
+        service_simule,
+        [["2026-08-20T10:00:00+00:00", "autre@example.com", "Autre SAS", "{}"]],
+    )
+
+    resultat = chercher_et_supprimer_reponse_tally("alex@example.com", service=service_simule)
+
+    assert resultat is None
+    service_simule.spreadsheets.return_value.batchUpdate.assert_not_called()
+
+
+# --- purger_reponses_tally_expirees ---------------------------------------
+
+def test_purge_supprime_les_lignes_de_plus_de_30_jours(monkeypatch):
+    monkeypatch.setenv("GOOGLE_SHEETS_SPREADSHEET_ID", "id-de-test")
+    service_simule = MagicMock()
+
+    maintenant = datetime.datetime.now(datetime.timezone.utc)
+    date_vieille = (maintenant - datetime.timedelta(days=45)).isoformat()
+    date_recente = (maintenant - datetime.timedelta(days=2)).isoformat()
+
+    _configurer_lignes_tally_en_attente(
+        service_simule,
+        [
+            [date_vieille, "vieux@example.com", "Vieux SAS", "{}"],
+            [date_recente, "recent@example.com", "Recent SAS", "{}"],
+        ],
+    )
+
+    nb_supprimees = purger_reponses_tally_expirees(service=service_simule)
+
+    assert nb_supprimees == 1
+    batch_mock = service_simule.spreadsheets.return_value.batchUpdate
+    batch_mock.assert_called_once()
+    _, kwargs = batch_mock.call_args
+    requetes = kwargs["body"]["requests"]
+    assert len(requetes) == 1
+    assert requetes[0]["deleteDimension"]["range"]["startIndex"] == 1  # la ligne vieille
+
+
+def test_purge_ne_fait_rien_si_aucune_ligne_expiree(monkeypatch):
+    monkeypatch.setenv("GOOGLE_SHEETS_SPREADSHEET_ID", "id-de-test")
+    service_simule = MagicMock()
+
+    date_recente = (
+        datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=1)
+    ).isoformat()
+    _configurer_lignes_tally_en_attente(
+        service_simule, [[date_recente, "recent@example.com", "Recent SAS", "{}"]]
+    )
+
+    nb_supprimees = purger_reponses_tally_expirees(service=service_simule)
+
+    assert nb_supprimees == 0
+    service_simule.spreadsheets.return_value.batchUpdate.assert_not_called()
