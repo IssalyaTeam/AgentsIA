@@ -66,3 +66,28 @@ class ResultatScoring:
 class ResultatRedFlags:
     red_flags_entree_detectes: list[str]
     red_flags_fit_isaa_detectes: list[str]
+
+
+@dataclass
+class ContexteProspect:
+    """Informations textuelles libres, utilisées pour rédiger la synthèse.
+
+    Contrairement à ProspectInput (booléens déjà tranchés pour le scoring),
+    ce contexte reste brut : c'est le module de génération d'hypothèses qui
+    l'interprète, pas le moteur de scoring.
+    """
+
+    nom_entreprise: str
+    secteur_activite: str
+    effectif: int
+    anciennete_annees: int
+    appartient_a_un_groupe: bool
+    reponses_formulaire: dict[str, str]
+    resume_site_web: str
+
+
+@dataclass
+class HypothesesQualification:
+    enjeux_probables: list[str]
+    opportunites_probables: list[str]
+    synthese: str
