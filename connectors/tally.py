@@ -10,6 +10,7 @@ ici.
 TYPES_A_EXCLURE = {"INPUT_EMAIL"}
 
 LABEL_NOM_ENTREPRISE = "entreprise"
+TYPE_EMAIL = "INPUT_EMAIL"
 
 
 def _resoudre_valeur(champ: dict) -> str:
@@ -65,6 +66,19 @@ def extraire_nom_entreprise(payload_webhook: dict) -> str | None:
     for champ in champs:
         label = (champ.get("label") or "").strip().lower()
         if label == LABEL_NOM_ENTREPRISE:
+            valeur = _resoudre_valeur(champ)
+            return valeur or None
+    return None
+
+
+def extraire_email(payload_webhook: dict) -> str | None:
+    """Extrait l'email du répondant (champ de type INPUT_EMAIL), utilisé
+    pour corréler cette réponse Tally avec une réservation Cal.com
+    ultérieure. Retourne None si aucun champ email n'est présent.
+    """
+    champs = payload_webhook.get("data", {}).get("fields", [])
+    for champ in champs:
+        if champ.get("type") == TYPE_EMAIL:
             valeur = _resoudre_valeur(champ)
             return valeur or None
     return None

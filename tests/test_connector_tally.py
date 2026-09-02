@@ -1,6 +1,6 @@
 """Tests du connecteur Tally (déterministe, aucun appel réseau)."""
 
-from connectors.tally import extraire_nom_entreprise, extraire_reponses_formulaire
+from connectors.tally import extraire_email, extraire_nom_entreprise, extraire_reponses_formulaire
 
 # Payload d'exemple réel (webhook Tally, formulaire "Pré-qualification audit Issalya")
 PAYLOAD_EXEMPLE = {
@@ -111,3 +111,14 @@ def test_nom_entreprise_absent_retourne_none():
         "data": {"fields": [{"key": "k", "label": "Prénom", "type": "INPUT_TEXT", "value": "Dylan"}]}
     }
     assert extraire_nom_entreprise(payload_sans_entreprise) is None
+
+
+def test_extrait_lemail():
+    assert extraire_email(PAYLOAD_EXEMPLE) == "dylan.durand88@outlook.fr"
+
+
+def test_email_absent_retourne_none():
+    payload_sans_email = {
+        "data": {"fields": [{"key": "k", "label": "Prénom", "type": "INPUT_TEXT", "value": "Dylan"}]}
+    }
+    assert extraire_email(payload_sans_email) is None

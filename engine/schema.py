@@ -131,3 +131,4 @@ class FicheSynthese:
     resultat_scoring: ResultatScoring
     resultat_red_flags: ResultatRedFlags
     hypotheses: HypothesesQualification
+    donnees_manquantes: list[str] = field(default_factory=list)

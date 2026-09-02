@@ -19,10 +19,12 @@ def assembler_fiche(
     resultat_scoring: ResultatScoring,
     resultat_red_flags: ResultatRedFlags,
     hypotheses: HypothesesQualification,
+    donnees_manquantes: list[str] | None = None,
 ) -> FicheSynthese:
     return FicheSynthese(
         nom_entreprise=contexte.nom_entreprise,
         resultat_scoring=resultat_scoring,
         resultat_red_flags=resultat_red_flags,
         hypotheses=hypotheses,
+        donnees_manquantes=donnees_manquantes or [],
     )
