@@ -9,6 +9,8 @@ ici.
 
 TYPES_A_EXCLURE = {"INPUT_EMAIL"}
 
+LABEL_NOM_ENTREPRISE = "entreprise"
+
 
 def _resoudre_valeur(champ: dict) -> str:
     """Convertit la valeur brute d'un champ Tally en texte lisible.
@@ -52,3 +54,17 @@ def extraire_reponses_formulaire(payload_webhook: dict) -> dict[str, str]:
         reponses[label] = _resoudre_valeur(champ)
 
     return reponses
+
+
+def extraire_nom_entreprise(payload_webhook: dict) -> str | None:
+    """Extrait le nom de l'entreprise déclaré dans le formulaire Tally
+    (champ "Entreprise"), utilisé pour identifier l'entreprise auprès
+    de Pappers. Retourne None si le champ est absent ou vide.
+    """
+    champs = payload_webhook.get("data", {}).get("fields", [])
+    for champ in champs:
+        label = (champ.get("label") or "").strip().lower()
+        if label == LABEL_NOM_ENTREPRISE:
+            valeur = _resoudre_valeur(champ)
+            return valeur or None
+    return None
