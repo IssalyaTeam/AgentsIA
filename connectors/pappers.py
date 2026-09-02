@@ -15,8 +15,11 @@ import datetime
 import os
 
 import requests
+from dotenv import load_dotenv
 
 from engine.schema import Etablissement, ExerciceFinancier
+
+load_dotenv()
 
 URL_RECHERCHE = "https://api.pappers.fr/v2/recherche"
 

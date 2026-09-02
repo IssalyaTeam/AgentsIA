@@ -9,6 +9,9 @@ module est le seul de connectors/ à connaître ce format.
 import os
 
 import requests
+from dotenv import load_dotenv
+
+load_dotenv()
 
 URL_WEBHOOK_ENV = "SLACK_WEBHOOK_URL"
 
