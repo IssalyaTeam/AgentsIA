@@ -8,6 +8,7 @@ direct à Tally ou Pappers ici).
 
 import json
 import os
+import re
 
 import anthropic
 from dotenv import load_dotenv
@@ -86,6 +87,20 @@ Red flags de fit ISAA détectés : {red_flags_fit_isaa}
 """
 
 
+def _extraire_json(texte: str) -> dict:
+    """Extrait l'objet JSON de la réponse, en tolérant deux artefacts
+    fréquents des modèles de langage malgré la consigne de ne renvoyer
+    que du JSON brut : les balises markdown (```json ... ```) et les
+    virgules finales avant une accolade/crochet fermant.
+    """
+    correspondance = re.search(r"\{.*\}", texte, re.DOTALL)
+    if not correspondance:
+        raise ValueError(f"Réponse de Claude sans JSON exploitable : {texte!r}")
+    brut = correspondance.group(0)
+    nettoye = re.sub(r",(\s*[}\]])", r"\1", brut)
+    return json.loads(nettoye)
+
+
 def generer_hypotheses(
     contexte: ContexteProspect,
     resultat_scoring: ResultatScoring,
@@ -98,7 +113,7 @@ def generer_hypotheses(
 
     reponse = client.messages.create(
         model=modele,
-        max_tokens=1024,
+        max_tokens=4096,
         system=SYSTEM_PROMPT,
         messages=[
             {
@@ -111,7 +126,7 @@ def generer_hypotheses(
     )
 
     texte = next(bloc.text for bloc in reponse.content if bloc.type == "text")
-    donnees = json.loads(texte)
+    donnees = _extraire_json(texte)
 
     return HypothesesQualification(
         enjeux_probables=donnees["enjeux_probables"],
