@@ -18,5 +18,5 @@ jobs:
       - name: Installer les dépendances
         run: pip install -r requirements.txt
 
-      - name: Lancer les tests
-        run: pytest tests/ -v
+      - name: Lancer les tests (hors tests API payants)
+        run: pytest tests/ -v -m "not api"
