@@ -119,3 +119,15 @@ class HypothesesQualification:
     enjeux_probables: list[str]
     opportunites_probables: list[str]
     synthese: str
+
+
+@dataclass
+class FicheSynthese:
+    """Livrable final du moteur : assemble le résultat du scoring, les red
+    flags détectés et les hypothèses, pour la fiche envoyée avant l'ISAC.
+    """
+
+    nom_entreprise: str
+    resultat_scoring: ResultatScoring
+    resultat_red_flags: ResultatRedFlags
+    hypotheses: HypothesesQualification
