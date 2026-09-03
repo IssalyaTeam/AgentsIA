@@ -14,6 +14,7 @@ import datetime
 import json
 import os
 
+import google.auth
 from dotenv import load_dotenv
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -39,22 +40,26 @@ DELAI_EXPIRATION_JOURS_PAR_DEFAUT = 30
 
 
 def _construire_service():
-    """Construit le client Google Sheets à partir des identifiants du
-    compte de service, lus depuis la variable d'environnement
-    GOOGLE_SERVICE_ACCOUNT_JSON (le JSON complet, pas un chemin de
-    fichier — cohérent avec un déploiement serverless sans disque
-    persistant).
+    """Construit le client Google Sheets.
+
+    Deux modes d'authentification :
+    - GOOGLE_SERVICE_ACCOUNT_JSON définie (dev local, hors de GCP) : la
+      clé du compte de service, lue depuis cette variable d'environnement
+      (le JSON complet, pas un chemin de fichier).
+    - GOOGLE_SERVICE_ACCOUNT_JSON absente : Application Default
+      Credentials — le cas normal en production, quand la fonction
+      Cloud Functions tourne avec le compte de service
+      (--service-account=...) comme identité d'exécution. Aucune clé à
+      gérer dans ce cas.
     """
     identifiants_bruts = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
-    if not identifiants_bruts:
-        raise RuntimeError(
-            "GOOGLE_SERVICE_ACCOUNT_JSON n'est pas configurée : impossible de "
-            "s'authentifier auprès de Google Sheets."
+    if identifiants_bruts:
+        informations = json.loads(identifiants_bruts)
+        credentials = service_account.Credentials.from_service_account_info(
+            informations, scopes=SCOPES
         )
-    informations = json.loads(identifiants_bruts)
-    credentials = service_account.Credentials.from_service_account_info(
-        informations, scopes=SCOPES
-    )
+    else:
+        credentials, _ = google.auth.default(scopes=SCOPES)
     return build("sheets", "v4", credentials=credentials)
 
 

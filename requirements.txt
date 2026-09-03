@@ -4,3 +4,4 @@ requests
 pytest
 google-api-python-client
 google-auth
+functions-framework
