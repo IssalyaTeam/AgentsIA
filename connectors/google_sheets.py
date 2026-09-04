@@ -22,7 +22,8 @@ from googleapiclient.discovery import build
 load_dotenv()
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
-PLAGE_PAR_DEFAUT = "Fiches!A:G"
+PLAGE_PAR_DEFAUT = "Fiches!A:H"
+PLAGE_ID_RESERVATION = "Fiches!H:H"
 
 EN_TETES = [
     "Date",
@@ -32,6 +33,7 @@ EN_TETES = [
     "Filtres éliminatoires",
     "Red flags",
     "Hypothèses (résumé)",
+    "ID réservation Cal.com",
 ]
 
 ONGLET_TALLY_EN_ATTENTE = "Tally_en_attente"
@@ -63,7 +65,7 @@ def _construire_service():
     return build("sheets", "v4", credentials=credentials)
 
 
-def formater_ligne_fiche(fiche) -> list[str]:
+def formater_ligne_fiche(fiche, id_reservation: str = "") -> list[str]:
     """Transforme une FicheSynthese en une ligne de tableur."""
     filtres_ok = fiche.resultat_scoring.filtres_ok
     filtres_texte = (
@@ -86,10 +88,31 @@ def formater_ligne_fiche(fiche) -> list[str]:
         filtres_texte,
         red_flags_texte,
         fiche.hypotheses.synthese,
+        id_reservation,
     ]
 
 
-def enregistrer_fiche(fiche, service=None) -> None:
+def a_deja_ete_traite(id_reservation: str, service=None) -> bool:
+    """Vérifie si une réservation Cal.com a déjà produit une fiche
+    (colonne "ID réservation Cal.com" de l'onglet Fiches). Empêche un
+    webhook relancé par Cal.com (délai d'attente dépassé de son côté) de
+    déclencher un second traitement complet — et donc une seconde
+    notification Slack — pour la même réservation.
+    """
+    service = service or _construire_service()
+    spreadsheet_id = os.getenv("GOOGLE_SHEETS_SPREADSHEET_ID")
+
+    resultat = (
+        service.spreadsheets()
+        .values()
+        .get(spreadsheetId=spreadsheet_id, range=PLAGE_ID_RESERVATION)
+        .execute()
+    )
+    ids_existants = {ligne[0] for ligne in resultat.get("values", []) if ligne}
+    return id_reservation in ids_existants
+
+
+def enregistrer_fiche(fiche, service=None, id_reservation: str = "") -> None:
     """Ajoute une ligne au Google Sheet de suivi des fiches de synthèse."""
     service = service or _construire_service()
     spreadsheet_id = os.getenv("GOOGLE_SHEETS_SPREADSHEET_ID")
@@ -99,7 +122,7 @@ def enregistrer_fiche(fiche, service=None) -> None:
         range=PLAGE_PAR_DEFAUT,
         valueInputOption="USER_ENTERED",
         insertDataOption="INSERT_ROWS",
-        body={"values": [formater_ligne_fiche(fiche)]},
+        body={"values": [formater_ligne_fiche(fiche, id_reservation)]},
     ).execute()
 
 

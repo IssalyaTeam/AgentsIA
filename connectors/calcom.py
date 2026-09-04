@@ -25,3 +25,12 @@ def extraire_nom_participant(payload_webhook: dict) -> str | None:
     """Extrait le nom de la personne qui a réservé (affichage/logs)."""
     participant = _premier_participant(payload_webhook)
     return (participant or {}).get("name") or None
+
+
+def extraire_id_reservation(payload_webhook: dict) -> str | None:
+    """Extrait l'identifiant unique de la réservation (uid), utilisé pour
+    éviter de traiter deux fois le même événement si Cal.com renvoie le
+    webhook plusieurs fois (relance après un délai d'attente dépassé,
+    notre traitement étant plus long que ce que Cal.com tolère).
+    """
+    return payload_webhook.get("payload", {}).get("uid") or None

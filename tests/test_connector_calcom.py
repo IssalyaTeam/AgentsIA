@@ -1,6 +1,10 @@
 """Tests du connecteur Cal.com (déterministe, aucun appel réseau)."""
 
-from connectors.calcom import extraire_email_participant, extraire_nom_participant
+from connectors.calcom import (
+    extraire_email_participant,
+    extraire_id_reservation,
+    extraire_nom_participant,
+)
 
 # Payload d'exemple réel (webhook Cal.com, BOOKING_CREATED)
 PAYLOAD_EXEMPLE = {
@@ -61,3 +65,11 @@ def test_email_absent_retourne_none():
 def test_payload_sans_participants_retourne_none():
     assert extraire_email_participant({"payload": {}}) is None
     assert extraire_nom_participant({"payload": {}}) is None
+
+
+def test_extrait_lid_de_reservation():
+    assert extraire_id_reservation(PAYLOAD_EXEMPLE) == "uLKSExGBt74TDytfyheh6q"
+
+
+def test_id_reservation_absent_retourne_none():
+    assert extraire_id_reservation({"payload": {}}) is None

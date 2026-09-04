@@ -24,6 +24,7 @@ DONNEES_PAPPERS_PAR_DEFAUT = {
 
 def gerer_webhook_calcom(
     payload_webhook: dict,
+    deja_traite=None,
     purger_tally_expires=None,
     chercher_tally=None,
     rechercher_entreprise_pappers=None,
@@ -33,14 +34,16 @@ def gerer_webhook_calcom(
     generer_hypotheses_prospect=None,
     enregistrer_fiche_sheets=None,
     envoyer_fiche_slack=None,
-) -> FicheSynthese:
+) -> FicheSynthese | None:
     """Traite un webhook Cal.com de bout en bout : identifie le
     participant, corrèle avec Tally, enrichit avec Pappers, fait tourner
-    le moteur, publie le résultat.
+    le moteur, publie le résultat. Retourne None si cette réservation a
+    déjà été traitée (webhook relancé par Cal.com).
 
     Chaque dépendance externe est injectable (tests avec des doublures,
     sans appel réseau réel) ; par défaut, les vraies implémentations.
     """
+    deja_traite = deja_traite or google_sheets.a_deja_ete_traite
     purger_tally_expires = purger_tally_expires or google_sheets.purger_reponses_tally_expirees
     chercher_tally = chercher_tally or google_sheets.chercher_et_supprimer_reponse_tally
     rechercher_entreprise_pappers = rechercher_entreprise_pappers or pappers.rechercher_entreprise
@@ -50,6 +53,14 @@ def gerer_webhook_calcom(
     generer_hypotheses_prospect = generer_hypotheses_prospect or generer_hypotheses
     enregistrer_fiche_sheets = enregistrer_fiche_sheets or google_sheets.enregistrer_fiche
     envoyer_fiche_slack = envoyer_fiche_slack or slack.envoyer_fiche
+
+    # Vérifié en tout premier, avant tout appel coûteux (Pappers, Claude) :
+    # Cal.com relance le webhook si notre réponse tarde trop, ce qui
+    # déclencherait sinon un second traitement complet (et une seconde
+    # notification Slack) pour la même réservation.
+    id_reservation = calcom.extraire_id_reservation(payload_webhook)
+    if id_reservation and deja_traite(id_reservation):
+        return None
 
     purger_tally_expires()
 
@@ -101,7 +112,7 @@ def gerer_webhook_calcom(
         contexte, resultat_scoring, resultat_red_flags, hypotheses, donnees_manquantes
     )
 
-    enregistrer_fiche_sheets(fiche)
+    enregistrer_fiche_sheets(fiche, id_reservation=id_reservation or "")
     envoyer_fiche_slack(fiche)
 
     return fiche

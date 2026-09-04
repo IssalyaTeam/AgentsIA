@@ -38,12 +38,13 @@ def _hypotheses_type():
     )
 
 
-def _doublures(donnees_tally=None, resultat_pappers="present"):
+def _doublures(donnees_tally=None, resultat_pappers="present", deja_traite=False):
     """Construit un jeu de doublures pour toutes les dépendances externes.
     resultat_pappers="present" simule un résultat Pappers trouvé,
     None simule une absence de résultat.
     """
     return {
+        "deja_traite": MagicMock(return_value=deja_traite),
         "purger_tally_expires": MagicMock(),
         "chercher_tally": MagicMock(return_value=donnees_tally),
         "rechercher_entreprise_pappers": MagicMock(
@@ -79,7 +80,9 @@ def test_flux_nominal_sans_donnees_manquantes():
     assert fiche.nom_entreprise == "TOMCO (TOP MANAGER COUNCIL)"
     doublures["purger_tally_expires"].assert_called_once()
     doublures["chercher_tally"].assert_called_once_with("arekisanda1992@gmail.com")
-    doublures["enregistrer_fiche_sheets"].assert_called_once_with(fiche)
+    doublures["enregistrer_fiche_sheets"].assert_called_once_with(
+        fiche, id_reservation="uLKSExGBt74TDytfyheh6q"
+    )
     doublures["envoyer_fiche_slack"].assert_called_once_with(fiche)
 
 
@@ -120,3 +123,37 @@ def test_purge_appelee_avant_tout_le_reste():
     gerer_webhook_calcom(PAYLOAD_EXEMPLE, **doublures)
 
     doublures["purger_tally_expires"].assert_called_once()
+
+
+def test_reservation_deja_traitee_ne_relance_rien():
+    """Simule un webhook Cal.com relancé (délai d'attente dépassé côté
+    Cal.com) pour une réservation déjà traitée : aucun appel coûteux ne
+    doit être refait, et aucune seconde notification Slack envoyée."""
+    doublures = _doublures(
+        donnees_tally={"nom_entreprise": "TOMCO", "reponses_formulaire": {}},
+        deja_traite=True,
+    )
+
+    resultat = gerer_webhook_calcom(PAYLOAD_EXEMPLE, **doublures)
+
+    assert resultat is None
+    doublures["deja_traite"].assert_called_once_with("uLKSExGBt74TDytfyheh6q")
+    doublures["purger_tally_expires"].assert_not_called()
+    doublures["chercher_tally"].assert_not_called()
+    doublures["rechercher_entreprise_pappers"].assert_not_called()
+    doublures["interpreter"].assert_not_called()
+    doublures["generer_hypotheses_prospect"].assert_not_called()
+    doublures["enregistrer_fiche_sheets"].assert_not_called()
+    doublures["envoyer_fiche_slack"].assert_not_called()
+
+
+def test_reservation_non_traitee_declenche_le_flux_normalement():
+    doublures = _doublures(
+        donnees_tally={"nom_entreprise": "TOMCO", "reponses_formulaire": {}},
+        deja_traite=False,
+    )
+
+    fiche = gerer_webhook_calcom(PAYLOAD_EXEMPLE, **doublures)
+
+    assert fiche is not None
+    doublures["envoyer_fiche_slack"].assert_called_once()

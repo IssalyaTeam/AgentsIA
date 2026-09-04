@@ -11,8 +11,10 @@ from unittest.mock import MagicMock
 
 from connectors.google_sheets import (
     ONGLET_TALLY_EN_ATTENTE,
+    PLAGE_ID_RESERVATION,
     PLAGE_PAR_DEFAUT,
     PLAGE_TALLY_EN_ATTENTE,
+    a_deja_ete_traite,
     chercher_et_supprimer_reponse_tally,
     enregistrer_fiche,
     enregistrer_reponse_tally_en_attente,
@@ -51,13 +53,19 @@ def _fiche_exemple(filtres_ok=True, filtres_echoues=None, red_flags_entree=None,
 def test_formater_ligne_fiche_contient_les_champs_attendus():
     ligne = formater_ligne_fiche(_fiche_exemple())
 
-    assert len(ligne) == 7
+    assert len(ligne) == 8
     assert ligne[1] == "Cabinet Delacroix & Associés"
     assert ligne[2] == "16/20"
     assert ligne[3] == "B"
     assert ligne[4] == "Tous validés"
     assert ligne[5] == "aucun"
     assert ligne[6] == "Ce prospect présente un potentiel intéressant, à confirmer pendant l'appel."
+    assert ligne[7] == ""
+
+
+def test_formater_ligne_fiche_inclut_lid_de_reservation():
+    ligne = formater_ligne_fiche(_fiche_exemple(), id_reservation="uLKSExGBt74TDytfyheh6q")
+    assert ligne[7] == "uLKSExGBt74TDytfyheh6q"
 
 
 def test_formater_ligne_fiche_signale_les_filtres_echoues():
@@ -224,3 +232,38 @@ def test_purge_ne_fait_rien_si_aucune_ligne_expiree(monkeypatch):
 
     assert nb_supprimees == 0
     service_simule.spreadsheets.return_value.batchUpdate.assert_not_called()
+
+
+# --- a_deja_ete_traite -----------------------------------------------
+
+def test_a_deja_ete_traite_retourne_true_si_id_present(monkeypatch):
+    monkeypatch.setenv("GOOGLE_SHEETS_SPREADSHEET_ID", "id-de-test")
+    service_simule = MagicMock()
+    service_simule.spreadsheets.return_value.values.return_value.get.return_value.execute.return_value = {
+        "values": [["ID réservation Cal.com"], ["abc123"], ["def456"]]
+    }
+
+    assert a_deja_ete_traite("def456", service=service_simule) is True
+
+    _, kwargs = service_simule.spreadsheets.return_value.values.return_value.get.call_args
+    assert kwargs["range"] == PLAGE_ID_RESERVATION
+
+
+def test_a_deja_ete_traite_retourne_false_si_id_absent(monkeypatch):
+    monkeypatch.setenv("GOOGLE_SHEETS_SPREADSHEET_ID", "id-de-test")
+    service_simule = MagicMock()
+    service_simule.spreadsheets.return_value.values.return_value.get.return_value.execute.return_value = {
+        "values": [["ID réservation Cal.com"], ["abc123"]]
+    }
+
+    assert a_deja_ete_traite("inconnu", service=service_simule) is False
+
+
+def test_a_deja_ete_traite_retourne_false_si_colonne_vide(monkeypatch):
+    monkeypatch.setenv("GOOGLE_SHEETS_SPREADSHEET_ID", "id-de-test")
+    service_simule = MagicMock()
+    service_simule.spreadsheets.return_value.values.return_value.get.return_value.execute.return_value = {
+        "values": []
+    }
+
+    assert a_deja_ete_traite("nimporte-quoi", service=service_simule) is False
