@@ -45,6 +45,7 @@ def _doublures(donnees_tally=None, resultat_pappers="present", deja_traite=False
     """
     return {
         "deja_traite": MagicMock(return_value=deja_traite),
+        "verrouiller": MagicMock(),
         "purger_tally_expires": MagicMock(),
         "chercher_tally": MagicMock(return_value=donnees_tally),
         "rechercher_entreprise_pappers": MagicMock(
@@ -78,6 +79,7 @@ def test_flux_nominal_sans_donnees_manquantes():
 
     assert fiche.donnees_manquantes == []
     assert fiche.nom_entreprise == "TOMCO (TOP MANAGER COUNCIL)"
+    doublures["verrouiller"].assert_called_once_with("uLKSExGBt74TDytfyheh6q")
     doublures["purger_tally_expires"].assert_called_once()
     doublures["chercher_tally"].assert_called_once_with("arekisanda1992@gmail.com")
     doublures["enregistrer_fiche_sheets"].assert_called_once_with(
@@ -138,6 +140,7 @@ def test_reservation_deja_traitee_ne_relance_rien():
 
     assert resultat is None
     doublures["deja_traite"].assert_called_once_with("uLKSExGBt74TDytfyheh6q")
+    doublures["verrouiller"].assert_not_called()
     doublures["purger_tally_expires"].assert_not_called()
     doublures["chercher_tally"].assert_not_called()
     doublures["rechercher_entreprise_pappers"].assert_not_called()
@@ -156,4 +159,5 @@ def test_reservation_non_traitee_declenche_le_flux_normalement():
     fiche = gerer_webhook_calcom(PAYLOAD_EXEMPLE, **doublures)
 
     assert fiche is not None
+    doublures["verrouiller"].assert_called_once_with("uLKSExGBt74TDytfyheh6q")
     doublures["envoyer_fiche_slack"].assert_called_once()

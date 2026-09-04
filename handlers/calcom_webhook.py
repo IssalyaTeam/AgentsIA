@@ -25,6 +25,7 @@ DONNEES_PAPPERS_PAR_DEFAUT = {
 def gerer_webhook_calcom(
     payload_webhook: dict,
     deja_traite=None,
+    verrouiller=None,
     purger_tally_expires=None,
     chercher_tally=None,
     rechercher_entreprise_pappers=None,
@@ -44,6 +45,7 @@ def gerer_webhook_calcom(
     sans appel réseau réel) ; par défaut, les vraies implémentations.
     """
     deja_traite = deja_traite or google_sheets.a_deja_ete_traite
+    verrouiller = verrouiller or google_sheets.verrouiller_reservation
     purger_tally_expires = purger_tally_expires or google_sheets.purger_reponses_tally_expirees
     chercher_tally = chercher_tally or google_sheets.chercher_et_supprimer_reponse_tally
     rechercher_entreprise_pappers = rechercher_entreprise_pappers or pappers.rechercher_entreprise
@@ -54,13 +56,19 @@ def gerer_webhook_calcom(
     enregistrer_fiche_sheets = enregistrer_fiche_sheets or google_sheets.enregistrer_fiche
     envoyer_fiche_slack = envoyer_fiche_slack or slack.envoyer_fiche
 
-    # Vérifié en tout premier, avant tout appel coûteux (Pappers, Claude) :
-    # Cal.com relance le webhook si notre réponse tarde trop, ce qui
-    # déclencherait sinon un second traitement complet (et une seconde
-    # notification Slack) pour la même réservation.
+    # Vérifié et verrouillé en tout premier, avant tout appel coûteux
+    # (Pappers, Claude) : Cal.com relance le webhook si notre réponse
+    # tarde trop, parfois quelques secondes seulement après la première
+    # tentative. Verrouiller immédiatement (et pas seulement à la toute
+    # fin, quand la fiche est écrite) évite qu'une relance arrivant
+    # pendant qu'un premier traitement tourne encore ne déclenche un
+    # second traitement complet en parallèle — et donc une seconde
+    # notification Slack — pour la même réservation.
     id_reservation = calcom.extraire_id_reservation(payload_webhook)
-    if id_reservation and deja_traite(id_reservation):
-        return None
+    if id_reservation:
+        if deja_traite(id_reservation):
+            return None
+        verrouiller(id_reservation)
 
     purger_tally_expires()
 

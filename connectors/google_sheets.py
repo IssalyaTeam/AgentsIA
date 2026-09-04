@@ -23,7 +23,6 @@ load_dotenv()
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 PLAGE_PAR_DEFAUT = "Fiches!A:H"
-PLAGE_ID_RESERVATION = "Fiches!H:H"
 
 EN_TETES = [
     "Date",
@@ -39,6 +38,9 @@ EN_TETES = [
 ONGLET_TALLY_EN_ATTENTE = "Tally_en_attente"
 PLAGE_TALLY_EN_ATTENTE = f"{ONGLET_TALLY_EN_ATTENTE}!A:D"
 DELAI_EXPIRATION_JOURS_PAR_DEFAUT = 30
+
+ONGLET_VERROUS = "Verrous_reservations"
+PLAGE_VERROUS = f"{ONGLET_VERROUS}!A:A"
 
 
 def _construire_service():
@@ -93,11 +95,17 @@ def formater_ligne_fiche(fiche, id_reservation: str = "") -> list[str]:
 
 
 def a_deja_ete_traite(id_reservation: str, service=None) -> bool:
-    """Vérifie si une réservation Cal.com a déjà produit une fiche
-    (colonne "ID réservation Cal.com" de l'onglet Fiches). Empêche un
-    webhook relancé par Cal.com (délai d'attente dépassé de son côté) de
-    déclencher un second traitement complet — et donc une seconde
-    notification Slack — pour la même réservation.
+    """Vérifie si une réservation Cal.com est déjà prise en charge (onglet
+    Verrous_reservations). Ce verrou est posé dès la réception du webhook
+    (voir verrouiller_reservation), avant tout traitement coûteux —
+    contrairement à l'onglet Fiches, qui n'est écrit qu'à la toute fin.
+
+    Si on vérifiait seulement l'onglet Fiches, une relance de Cal.com
+    arrivant pendant qu'un premier traitement tourne encore (celui-ci
+    prenant plusieurs dizaines de secondes : Pappers, Claude, Sheets,
+    Slack) verrait encore "pas traité" et déclencherait un second
+    traitement complet en parallèle — d'où le verrou séparé, posé
+    immédiatement.
     """
     service = service or _construire_service()
     spreadsheet_id = os.getenv("GOOGLE_SHEETS_SPREADSHEET_ID")
@@ -105,11 +113,28 @@ def a_deja_ete_traite(id_reservation: str, service=None) -> bool:
     resultat = (
         service.spreadsheets()
         .values()
-        .get(spreadsheetId=spreadsheet_id, range=PLAGE_ID_RESERVATION)
+        .get(spreadsheetId=spreadsheet_id, range=PLAGE_VERROUS)
         .execute()
     )
     ids_existants = {ligne[0] for ligne in resultat.get("values", []) if ligne}
     return id_reservation in ids_existants
+
+
+def verrouiller_reservation(id_reservation: str, service=None) -> None:
+    """Marque une réservation Cal.com comme prise en charge, avant tout
+    traitement coûteux (Pappers, Claude...), pour qu'une relance rapide
+    du webhook la voie immédiatement comme déjà en cours.
+    """
+    service = service or _construire_service()
+    spreadsheet_id = os.getenv("GOOGLE_SHEETS_SPREADSHEET_ID")
+
+    service.spreadsheets().values().append(
+        spreadsheetId=spreadsheet_id,
+        range=PLAGE_VERROUS,
+        valueInputOption="USER_ENTERED",
+        insertDataOption="INSERT_ROWS",
+        body={"values": [[id_reservation]]},
+    ).execute()
 
 
 def enregistrer_fiche(fiche, service=None, id_reservation: str = "") -> None:

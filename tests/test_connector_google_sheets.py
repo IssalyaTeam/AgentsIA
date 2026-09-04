@@ -11,15 +11,16 @@ from unittest.mock import MagicMock
 
 from connectors.google_sheets import (
     ONGLET_TALLY_EN_ATTENTE,
-    PLAGE_ID_RESERVATION,
     PLAGE_PAR_DEFAUT,
     PLAGE_TALLY_EN_ATTENTE,
+    PLAGE_VERROUS,
     a_deja_ete_traite,
     chercher_et_supprimer_reponse_tally,
     enregistrer_fiche,
     enregistrer_reponse_tally_en_attente,
     formater_ligne_fiche,
     purger_reponses_tally_expirees,
+    verrouiller_reservation,
 )
 from engine.schema import (
     FicheSynthese,
@@ -234,26 +235,26 @@ def test_purge_ne_fait_rien_si_aucune_ligne_expiree(monkeypatch):
     service_simule.spreadsheets.return_value.batchUpdate.assert_not_called()
 
 
-# --- a_deja_ete_traite -----------------------------------------------
+# --- a_deja_ete_traite / verrouiller_reservation ----------------------
 
 def test_a_deja_ete_traite_retourne_true_si_id_present(monkeypatch):
     monkeypatch.setenv("GOOGLE_SHEETS_SPREADSHEET_ID", "id-de-test")
     service_simule = MagicMock()
     service_simule.spreadsheets.return_value.values.return_value.get.return_value.execute.return_value = {
-        "values": [["ID réservation Cal.com"], ["abc123"], ["def456"]]
+        "values": [["abc123"], ["def456"]]
     }
 
     assert a_deja_ete_traite("def456", service=service_simule) is True
 
     _, kwargs = service_simule.spreadsheets.return_value.values.return_value.get.call_args
-    assert kwargs["range"] == PLAGE_ID_RESERVATION
+    assert kwargs["range"] == PLAGE_VERROUS
 
 
 def test_a_deja_ete_traite_retourne_false_si_id_absent(monkeypatch):
     monkeypatch.setenv("GOOGLE_SHEETS_SPREADSHEET_ID", "id-de-test")
     service_simule = MagicMock()
     service_simule.spreadsheets.return_value.values.return_value.get.return_value.execute.return_value = {
-        "values": [["ID réservation Cal.com"], ["abc123"]]
+        "values": [["abc123"]]
     }
 
     assert a_deja_ete_traite("inconnu", service=service_simule) is False
@@ -267,3 +268,17 @@ def test_a_deja_ete_traite_retourne_false_si_colonne_vide(monkeypatch):
     }
 
     assert a_deja_ete_traite("nimporte-quoi", service=service_simule) is False
+
+
+def test_verrouiller_reservation_ajoute_lid_dans_longlet_verrous(monkeypatch):
+    monkeypatch.setenv("GOOGLE_SHEETS_SPREADSHEET_ID", "id-de-test")
+    service_simule = MagicMock()
+
+    verrouiller_reservation("uLKSExGBt74TDytfyheh6q", service=service_simule)
+
+    append_mock = service_simule.spreadsheets.return_value.values.return_value.append
+    append_mock.assert_called_once()
+    _, kwargs = append_mock.call_args
+    assert kwargs["spreadsheetId"] == "id-de-test"
+    assert kwargs["range"] == PLAGE_VERROUS
+    assert kwargs["body"]["values"] == [["uLKSExGBt74TDytfyheh6q"]]
