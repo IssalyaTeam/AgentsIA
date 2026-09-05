@@ -14,50 +14,13 @@ import re
 
 import anthropic
 
+from engine.prompt_qualification import PROMPT_TEMPLATE
+
 MODELE_CLAUDE = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5")
 MAX_TENTATIVES = 3
 TIMEOUT_SECONDES = 3.0
 
 CHAMPS_ATTENDUS = ("Effectif", "Verdict", "Segment", "Signal IA", "Justification")
-
-# TODO(Blake) : bloc "étapes 0-4" en attente du texte exact du prompt Make
-# (règles de filtrage, tests de taille, signaux de groupe, critères IA,
-# vérification de spécialité, segment, signal IA, format de sortie) —
-# à coller verbatim ci-dessous, à la place de ce commentaire, sans modifier
-# le reste du template. Tant que ce bloc est absent, PROMPT_TEMPLATE est
-# incomplet et qualifier() ne doit pas être utilisé en production.
-PROMPT_TEMPLATE = """Tu es chargé de qualifier un cabinet de conseil pour Issalya, une entreprise qui aide les cabinets de conseil B2B à structurer leur usage de l'IA sans diluer leur expertise ni leur marque.
-
-IMPORTANT — Format de réponse strict :
-Réfléchis en interne, mais ta réponse finale ne doit contenir QUE les 5 lignes suivantes, dans l'ordre exact, sans aucun texte avant, après ou entre elles. Aucun Markdown, aucun titre d'étape, aucune ponctuation superflue.
-
-RÈGLE ABSOLUE — Ne jamais halluciner de chiffre : tout nombre doit apparaître littéralement dans le texte fourni (site, signaux, effectif Pappers). Un chiffre absent du texte doit être traité comme « information non disponible ».
-
-Titre de la page (élément clé du positionnement) : {{titre_page}}
-
-Signaux de taille détectés automatiquement sur le site (à vérifier avant tout verdict BON FIT/FIT EDGE) : {{signaux_taille}}
-
-Signal groupe/filiale/fusion détecté dans le HTML brut : {{signal_groupe}}
-
-Voici le contenu du site du cabinet à analyser :
-{{contenu_site}}
-
-Effectif Pappers (si disponible) :
-{{effectif_pappers}}
-(laisser vide si non disponible)
-
-Objet social Pappers :
-{{objet_social_pappers}}
-
-# TODO(Blake): étapes 0-4 manquantes — voir commentaire en tête de fichier.
-
-Format de sortie attendu :
-Effectif : <valeur ou "information non disponible">
-Verdict : <BON FIT / FIT EDGE / HORS ICP - <raison> / EFFECTIF NON VÉRIFIABLE / CONTENU INSUFFISANT>
-Segment : <positionnement métier ou "">
-Signal IA : <Oui, "<citation>" / Non>
-Justification : <une phrase factuelle, sourcée sur le texte fourni>
-"""
 
 
 class ErreurQualification(Exception):

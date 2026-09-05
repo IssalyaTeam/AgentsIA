@@ -5,9 +5,14 @@
 - L'appel réel à Claude (marqueur `api`, payant, non déterministe) est
   vérifié sur des propriétés (5 lignes, pas de chiffre halluciné), pas sur un
   texte exact — cf. méthodologie TDD partiel de l'agent ISAC.
-- Les 6 cas de non-régression sont marqués `skip` : PROMPT_TEMPLATE contient
-  encore un bloc TODO (étapes 0-4 du prompt Make, en attente du texte exact -
-  voir engine/qualification.py). Les retirer dès que ce bloc est complété.
+- Les 6 cas de non-régression appellent réellement Claude (marqueur `api`,
+  payant, local uniquement — aucune clé Anthropic n'est disponible dans
+  l'environnement de développement qui a écrit ces tests, donc ils n'ont pas
+  pu être exécutés ici : à lancer avec `pytest -m api` avant toute mise en
+  production). Pour CDHR et Interfaces, seule l'égalité de préfixe
+  "HORS ICP - Mauvaise spécialité" est vérifiée : c'est la seule formulation
+  mandatée au mot près par le prompt pour ces deux catégories (contrairement
+  à "agence" et "intermédiation/placement", qui ont un suffixe exact prévu).
 """
 
 from __future__ import annotations
@@ -20,11 +25,6 @@ from engine.qualification import (
     parser_reponse,
     qualifier,
     valider_absence_hallucination,
-)
-
-RAISON_PROMPT_INCOMPLET = (
-    "PROMPT_TEMPLATE contient un TODO (étapes 0-4 du prompt Make manquantes) : "
-    "verdict non fiable tant que ce bloc n'est pas complété."
 )
 
 # --- construire_prompt -------------------------------------------------------
@@ -55,7 +55,11 @@ def test_construire_prompt_effectif_pappers_absent_laisse_vide():
         effectif_pappers=None,
         objet_social_pappers="Conseil",
     )
-    assert "Effectif Pappers (si disponible) :\n\n(laisser vide si non disponible)" in prompt
+    assert (
+        "Si un effectif Pappers est disponible pour ce cabinet, le voici "
+        "(donnée officielle Insee, à privilégier sur toute estimation) :\n\n"
+        "(laisser vide si non disponible)"
+    ) in prompt
 
 
 def test_construire_prompt_signaux_absents_remplaces_par_aucun():
@@ -184,8 +188,9 @@ def test_qualifier_respecte_le_format_5_lignes_sur_un_cas_simple():
 
 
 @pytest.mark.api
-@pytest.mark.skip(reason=RAISON_PROMPT_INCOMPLET)
 def test_non_regression_thomas_legrand_consultants_bon_fit():
+    # effectif_pappers dans [10, 100] : précondition du filtre Make en Étape 0
+    # (les cas hors de cette plage n'atteignent jamais ce module en production).
     resultat = qualifier(
         titre_page="Thomas Legrand Consultants — Conseil en stratégie",
         signaux_taille="",
@@ -203,7 +208,6 @@ def test_non_regression_thomas_legrand_consultants_bon_fit():
 
 
 @pytest.mark.api
-@pytest.mark.skip(reason=RAISON_PROMPT_INCOMPLET)
 def test_non_regression_reseaulution_bon_fit():
     resultat = qualifier(
         titre_page="Reseaulution — Conseil en organisation",
@@ -222,8 +226,14 @@ def test_non_regression_reseaulution_bon_fit():
 
 
 @pytest.mark.api
-@pytest.mark.skip(reason=RAISON_PROMPT_INCOMPLET)
 def test_non_regression_cdhr_hors_icp_structure_associative():
+    # Le prompt ne mandate un suffixe entre parenthèses exact que pour les
+    # catégories "agence" et "intermédiation/placement" (Étape 2). Pour
+    # "structure associative/institut technique", seule la règle générique
+    # "HORS ICP - Mauvaise spécialité" est un texte mandaté au mot près ; le
+    # détail entre parenthèses reste à la libre formulation du modèle. On
+    # vérifie donc le préfixe mandaté, et que la Justification qualifie bien
+    # la bonne catégorie plutôt que d'exiger une égalité stricte fragile.
     resultat = qualifier(
         titre_page="CDHR — Institut technique de la filière",
         signaux_taille="",
@@ -233,14 +243,13 @@ def test_non_regression_cdhr_hors_icp_structure_associative():
             "filière, qui accompagne ses adhérents sur des missions réglementaires "
             "et propose un volet de conseil accessoire à ses membres."
         ),
-        effectif_pappers=8,
+        effectif_pappers=15,
         objet_social_pappers="Association technique professionnelle",
     )
-    assert resultat["verdict"] == "HORS ICP - Mauvaise spécialité (structure associative/institut technique)"
+    assert resultat["verdict"].startswith("HORS ICP - Mauvaise spécialité")
 
 
 @pytest.mark.api
-@pytest.mark.skip(reason=RAISON_PROMPT_INCOMPLET)
 def test_non_regression_interfaces_hors_icp_operateur_de_lieux():
     resultat = qualifier(
         titre_page="Interfaces — Espaces et programmes d'accompagnement",
@@ -251,15 +260,16 @@ def test_non_regression_interfaces_hors_icp_operateur_de_lieux():
             "d'accompagnement en présentiel pour entrepreneurs, avec des locaux "
             "dans plusieurs villes de France."
         ),
-        effectif_pappers=6,
+        effectif_pappers=12,
         objet_social_pappers="Gestion d'espaces et programmes d'accompagnement",
     )
-    assert resultat["verdict"] == "HORS ICP - Mauvaise spécialité (opérateur de lieux/programmes physiques)"
+    assert resultat["verdict"].startswith("HORS ICP - Mauvaise spécialité")
 
 
 @pytest.mark.api
-@pytest.mark.skip(reason=RAISON_PROMPT_INCOMPLET)
 def test_non_regression_axioncom_hors_icp_taille_probable():
+    # Test 2 (Étape 0) mandate cette chaîne exacte, mot pour mot, dès qu'un des
+    # six signaux de groupe est détecté — équivalence stricte justifiée ici.
     resultat = qualifier(
         titre_page="Axioncom — Écosystème de conseil",
         signaux_taille="",
@@ -268,14 +278,13 @@ def test_non_regression_axioncom_hors_icp_taille_probable():
             "L'écosystème Axioncom regroupe 8 filiales spécialisées par secteur, "
             "chacune apportant une expertise dédiée à ses clients depuis 2015."
         ),
-        effectif_pappers=4,
+        effectif_pappers=25,
         objet_social_pappers="Conseil en stratégie",
     )
     assert resultat["verdict"] == "HORS ICP - Taille probable (filiale de groupe, Pappers non représentatif)"
 
 
 @pytest.mark.api
-@pytest.mark.skip(reason=RAISON_PROMPT_INCOMPLET)
 def test_non_regression_ombello_hors_icp_taille_probable():
     resultat = qualifier(
         titre_page="Ombello — Conseil en gestion",
@@ -285,7 +294,7 @@ def test_non_regression_ombello_hors_icp_taille_probable():
             "Ombello est une filiale du groupe Baker Tilly, dédiée au conseil en "
             "gestion pour les PME et ETI, s'appuyant sur l'expertise du groupe."
         ),
-        effectif_pappers=5,
+        effectif_pappers=18,
         objet_social_pappers="Conseil en gestion",
     )
     assert resultat["verdict"] == "HORS ICP - Taille probable (filiale de groupe, Pappers non représentatif)"

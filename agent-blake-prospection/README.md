@@ -6,31 +6,28 @@ main sur l'écriture Google Sheets, la notification Slack et les retries — cet
 agent ne fait que qualifier un prospect à partir du contrat JSON défini
 ci-dessous ; il ne connaît ni Sheets ni Slack.
 
-## ⚠️ État d'avancement — bloc de prompt incomplet
+## ⚠️ État d'avancement — non-régression à valider avec une vraie clé API
 
-`engine/qualification.py` contient un **TODO explicite** à la place des
-« étapes 0‑4 » du prompt de qualification (règles de filtrage par
-spécialité/taille, critères IA, segment). Le texte exact utilisé aujourd'hui
-dans le scénario Make n'a pas encore été fourni verbatim — voir le
-commentaire en tête de `PROMPT_TEMPLATE` dans ce fichier.
+Le prompt de qualification est complet (texte verbatim du scénario Make,
+voir `engine/prompt_qualification.py`). Le pipeline est fonctionnel de bout
+en bout (scraping, extraction, appel Claude, parsing, anti-hallucination,
+endpoint HTTP) et les tests déterministes sont tous verts.
 
-Tant que ce bloc n'est pas complété :
-- Le pipeline est fonctionnel de bout en bout (scraping, extraction, appel
-  Claude, parsing, anti-hallucination, endpoint HTTP) et entièrement testé.
-- Les 6 tests de non-régression (`tests/test_qualification.py`, marqués
-  `@pytest.mark.skip`) ne peuvent pas être considérés comme fiables : ils
-  sont écrits et prêts, mais désactivés tant que la logique métier réelle
-  n'est pas injectée dans le prompt.
-- **Ne pas déployer en production** avant d'avoir complété ce bloc et
-  réactivé/validé les 6 cas de non-régression.
+Les 6 tests de non-régression (`tests/test_qualification.py`, marqueur
+`@pytest.mark.api`) appellent réellement l'API Claude — ils n'ont **pas pu
+être exécutés** dans l'environnement où ce code a été écrit (pas de
+`ANTHROPIC_API_KEY` disponible). **Ne pas déployer en production avant de
+les avoir lancés avec une vraie clé** (`pytest tests/ -v -m "api"`) et
+confirmé les 6 verdicts attendus.
 
 ## Architecture
 
 ```
 engine/
-  scraping.py        # un seul appel HTTP -> HTML brut
-  extraction.py       # HTML -> texte, titre, signaux de taille/groupe (regex)
-  qualification.py    # prompt -> appel Claude -> parsing -> anti-hallucination
+  scraping.py                # un seul appel HTTP -> HTML brut
+  extraction.py               # HTML -> texte, titre, signaux de taille/groupe (regex)
+  prompt_qualification.py     # texte verbatim du prompt (isolé pour rester <200 lignes/fichier)
+  qualification.py            # templating -> appel Claude -> parsing -> anti-hallucination
 connectors/
   http_endpoint.py    # endpoint HTTP POST /qualifier, orchestre le pipeline
 tests/
