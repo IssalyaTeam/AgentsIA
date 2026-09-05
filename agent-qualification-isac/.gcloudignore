@@ -1,0 +1,17 @@
+# Fichiers à ne jamais envoyer à Cloud Build / Cloud Functions.
+# Les vrais secrets sont configurés comme variables d'environnement au
+# déploiement (--set-env-vars / --service-account) — jamais via ce
+# fichier .env, qui ne doit pas quitter la machine locale.
+
+.git
+.gitignore
+.gcloudignore
+.env
+.env.example
+
+__pycache__/
+*.pyc
+.pytest_cache/
+
+tests/
+README.md
