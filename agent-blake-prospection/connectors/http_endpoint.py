@@ -1,18 +1,16 @@
-"""Point d'entrée HTTP POST : orchestre scraping -> extraction -> qualification.
+"""Point d'entrée HTTP pour Google Cloud Function (2ᵉ génération).
 
-Reçoit le JSON envoyé par Make (un module HTTP appelant cet endpoint à la
-place des ~14 modules du scénario 2), retourne le verdict de qualification.
-Make garde la main sur l'écriture Google Sheets, la notification Slack et les
-retries — cet endpoint ne fait que qualifier un prospect, il ne connaît ni
-Sheets ni Slack (le contrat d'entrée/sortie ne les mentionne pas).
+Ce fichier ne contient aucune logique métier : il valide le contrat JSON
+attendu par Make et adapte le pipeline (engine/) au format attendu par Cloud
+Functions. Même modèle que main.py de l'Agent Qualification ISAC —
+functions_framework.http, pas d'app Flask autonome à faire tourner soi-même.
 """
 
 from __future__ import annotations
 
 import logging
-import os
 
-from flask import Flask, jsonify, request
+import functions_framework
 
 from engine.extraction import (
     detecter_signal_groupe,
@@ -27,8 +25,6 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 
 CONTENU_MINIMUM_CARACTERES = 300
 CHAMPS_ENTREE_REQUIS = ("nom_cabinet", "site_web", "objet_social_pappers", "siren")
-
-app = Flask(__name__)
 
 
 def _erreur_validation_entree(payload: object) -> str | None:
@@ -54,13 +50,23 @@ def _verdict_contenu_insuffisant(raison: str) -> dict[str, str]:
     }
 
 
-@app.post("/qualifier")
-def qualifier_prospect_http():
+@functions_framework.http
+def qualifier_prospect_http(request):
+    """Entrée HTTP du pipeline de qualification (appelée par Make).
+
+    Cloud Functions ne fait pas de routage par chemin au sein d'une même
+    fonction déployée : le check de santé est géré ici via request.path
+    plutôt que par une route Flask séparée, pour préserver le comportement
+    sans avoir à déployer une deuxième fonction.
+    """
+    if getattr(request, "path", "") == "/healthz":
+        return {"status": "ok"}, 200
+
     payload = request.get_json(silent=True)
     erreur = _erreur_validation_entree(payload)
     if erreur:
         logging.warning("Requête invalide : %s", erreur)
-        return jsonify({"erreur": erreur}), 400
+        return {"erreur": erreur}, 400
 
     nom_cabinet = payload["nom_cabinet"]
     site_web = payload["site_web"]
@@ -74,11 +80,11 @@ def qualifier_prospect_http():
     contenu_site = html_vers_texte(html) if html else ""
 
     if len(contenu_site) < CONTENU_MINIMUM_CARACTERES:
-        logging.warning("Contenu insuffisant pour %s : %d caractère(s) exploitable(s)", nom_cabinet, len(contenu_site))
-        return jsonify(
-            _verdict_contenu_insuffisant(
-                "Le site n'a pas pu être scrapé ou ne contient pas assez de contenu exploitable."
-            )
+        logging.warning(
+            "Contenu insuffisant pour %s : %d caractère(s) exploitable(s)", nom_cabinet, len(contenu_site)
+        )
+        return _verdict_contenu_insuffisant(
+            "Le site n'a pas pu être scrapé ou ne contient pas assez de contenu exploitable."
         ), 200
 
     try:
@@ -92,17 +98,7 @@ def qualifier_prospect_http():
         )
     except ErreurQualification as erreur:
         logging.error("Qualification échouée pour %s : %s", nom_cabinet, erreur)
-        return jsonify({"erreur": "Qualification indisponible, réessayez plus tard."}), 502
+        return {"erreur": "Qualification indisponible, réessayez plus tard."}, 502
 
     logging.info("Qualification terminée pour %s : %s", nom_cabinet, resultat["verdict"])
-    return jsonify(resultat), 200
-
-
-@app.get("/healthz")
-def healthz():
-    return jsonify({"status": "ok"}), 200
-
-
-if __name__ == "__main__":
-    port = int(os.getenv("PORT", "8080"))
-    app.run(host="0.0.0.0", port=port)
+    return resultat, 200

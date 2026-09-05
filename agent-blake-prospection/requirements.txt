@@ -3,5 +3,4 @@ python-dotenv
 requests
 beautifulsoup4
 pytest
-flask
-gunicorn
+functions-framework
