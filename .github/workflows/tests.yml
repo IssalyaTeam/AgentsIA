@@ -16,7 +16,9 @@ jobs:
           python-version: "3.11"
 
       - name: Installer les dépendances
+        working-directory: agent-qualification-isac
         run: pip install -r requirements.txt
 
       - name: Lancer les tests (hors tests API payants)
+        working-directory: agent-qualification-isac
         run: pytest tests/ -v -m "not api"
