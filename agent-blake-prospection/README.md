@@ -29,15 +29,29 @@ Trois bugs réels trouvés et corrigés pendant cette validation (avant, tout
   métier halluciné. La validation ignore désormais les chiffres collés à des
   lettres (sigles) et les références internes à la grille ("Étape 2").
 
-### ⚠️ Point d'attention — contrainte de performance ≤4s non tenue
+### Point d'attention — contrainte de performance ≤4s non tenue (arbitrage acté)
 
 Latence Claude seule observée : 6 à 20s selon les cas (prompt volumineux,
-~27 000 caractères). Avec le scraping en amont, le total dépasse largement
-la cible de 4s/prospect du cadrage initial. Ce n'est pas un bug côté agent —
-c'est une conséquence directe de la taille du prompt fourni. À trancher avec
-toi : réduire le prompt, accepter une latence plus réaliste (le webhook Make
-attend simplement la réponse HTTP, un peu plus lentement), ou paralléliser
-autrement.
+~27 000 caractères, gardé tel quel sur décision explicite). Décision actée :
+on accepte cette latence plutôt que de réduire le prompt. En conséquence,
+trois timeouts en cascade doivent tous être supérieurs à la latence réelle
+du pipeline, chacun avec de la marge sur le suivant :
+
+| Niveau | Valeur | Configuré où |
+|---|---|---|
+| Module HTTP Make (appelle cet endpoint) | **60s** | Dans le scénario Make lui-même — je n'ai pas accès à Make depuis ce dépôt, c'est un réglage manuel à faire côté Make |
+| Applicatif (Gunicorn, `start.sh`) | **90s** | `start.sh` de ce dépôt, déjà réglé |
+| Hosting (plateforme de déploiement) | *voir ci-dessous* | Dépend de la plateforme choisie |
+
+**Hosting — je ne peux pas confirmer que c'est au-dessus de 30s pour toutes les plateformes**, rien n'étant encore déployé pour le vérifier en conditions réelles. D'après la documentation actuelle de chaque plateforme (recherche faite au moment d'écrire ceci, sources en fin de section) :
+
+- **Railway** : timeout de requête HTTP publique de 5 minutes (300s) — largement suffisant, aucune action requise.
+- **Google Cloud Function (2ᵉ génération)** : timeout par défaut de 60s, configurable jusqu'à 60 minutes via `--timeout` au déploiement (`gcloud functions deploy ... --timeout=90s`) — à régler explicitement au-dessus du défaut pour garder la marge.
+- **Render** : ⚠️ **risque réel**. Plusieurs retours (forum communautaire Render, pas de documentation officielle contredisant ces retours trouvée) indiquent un timeout de proxy imposé par la plateforme autour de 15-30s sur les web services, **non configurable** par l'utilisateur sur les offres standards. Si Blake est déployé sur Render, une réponse qui prend 20-60s (notre cas normal, pas un incident) risque d'être coupée par la plateforme avant même d'atteindre les 60s du timeout Make — indépendamment de tout ce qu'on règle dans `start.sh`.
+
+Sources : [Specs & Limits — Railway Docs](https://docs.railway.com/networking/public-networking/specs-and-limits) · [Configure Cloud Functions timeout](https://cloud.google.com/functions/docs/configuring/timeout) · [15 second request timeout — Render community](https://community.render.com/t/15-second-request-timeout/568) · [Can I configure web service timeout — Render community](https://render.discourse.group/t/can-i-configure-web-service-timeout/18233)
+
+**Recommandation** : si le choix de plateforme n'est pas encore figé, privilégier Railway ou Cloud Function plutôt que Render pour cet agent, vu la latence assumée. Si Render est néanmoins retenu, il faut le valider par un test réel en conditions de prod (une requête qui prend ~20-30s) avant la mise en production — je ne peux pas m'y substituer sans y déployer.
 
 ## Architecture
 
