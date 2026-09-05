@@ -14,7 +14,7 @@ AgentsIA/
     requirements.txt
     .env.example
 
-  agent-qualification-prospection/   Agent Qualification Prospection (en développement)
+  agent-blake-prospection/           Agent Qualification Prospection (en développement)
     engine/
     connectors/
     tests/
