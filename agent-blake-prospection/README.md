@@ -120,9 +120,42 @@ pytest tests/ -v -m "not api"   # déterministe, gratuit (CI)
 pytest tests/ -v -m "api"       # appelle réellement Claude, payant, local uniquement
 ```
 
-## Déploiement (Railway / Render)
+## Déploiement — Google Cloud Function (2ᵉ génération)
 
-- `Dockerfile` minimal (Python 3.11-slim, `pip install -r requirements.txt`).
-- `start.sh` lance Gunicorn sur `$PORT`, agnostique à la plateforme.
-- Les deux plateformes injectent `PORT` et les variables d'environnement
-  définies dans leur dashboard — aucun secret dans le dépôt.
+Hébergement confirmé : Cloud Functions 2ᵉ gen, région `europe-west9`, même
+pattern que l'Agent Qualification ISAC. Déploiement manuel via `gcloud
+functions deploy` depuis Cloud Shell :
+
+```bash
+gcloud functions deploy agent-blake-qualifier \
+  --gen2 \
+  --runtime=python311 \
+  --region=europe-west9 \
+  --source=. \
+  --entry-point=qualifier_prospect_http \
+  --trigger-http \
+  --timeout=90s \
+  --set-env-vars=ANTHROPIC_MODEL=claude-sonnet-5 \
+  --set-secrets=ANTHROPIC_API_KEY=projects/.../secrets/...:latest
+```
+
+`--timeout=90s` explicite car le défaut Cloud Functions 2ᵉ gen est 60s — pile
+à la limite du pire cas pipeline (~63s), sans marge. À régler au-dessus à
+chaque déploiement, ce n'est pas un défaut qu'on peut fixer une fois pour
+toutes dans le code.
+
+**⚠️ Écart à corriger avant un déploiement réel — pas fait dans le cadre de
+cette tâche, je n'ai pas voulu l'ajouter sans que ce soit demandé :**
+`connectors/http_endpoint.py` expose actuellement une app Flask classique
+(routes `/qualifier`, `/healthz`, lancée via Gunicorn) — un modèle pensé pour
+un hébergement conteneur générique (Railway/Render, cf. `Dockerfile` et
+`start.sh`), pas pour `gcloud functions deploy --source=.`, qui construit via
+buildpacks et attend un point d'entrée unique décoré
+`@functions_framework.http` (exactement comme `main.py` de l'Agent
+Qualification ISAC). En l'état, `gcloud functions deploy` avec
+`--entry-point=qualifier_prospect_http` échouera : cette fonction n'existe
+pas encore sous cette forme. Il faudra soit adapter `http_endpoint.py` à ce
+pattern (le plus cohérent avec l'ISAC), soit déployer via Cloud Run plutôt
+que Cloud Functions (qui, lui, accepte un Dockerfile). `Dockerfile` et
+`start.sh` deviennent alors inutiles si on part sur l'option
+`functions_framework`.
