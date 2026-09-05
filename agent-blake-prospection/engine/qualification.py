@@ -18,7 +18,12 @@ from engine.prompt_qualification import PROMPT_TEMPLATE
 
 MODELE_CLAUDE = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5")
 MAX_TENTATIVES = 3
-TIMEOUT_SECONDES = 3.0
+# Le prompt fait ~27000 caractères une fois construit (texte complet des étapes
+# 0-4 + contenu du site) : la latence réelle observée en test est de l'ordre de
+# 6-7 secondes, largement au-dessus des 3s initialement fixées par analogie
+# avec le timeout de scraping. Un timeout trop court ici ne "protège" rien :
+# il transforme des réponses valides en échecs systématiques après retries.
+TIMEOUT_SECONDES = 20.0
 
 CHAMPS_ATTENDUS = ("Effectif", "Verdict", "Segment", "Signal IA", "Justification")
 
@@ -51,6 +56,19 @@ def construire_prompt(
     return prompt
 
 
+def _extraire_texte(reponse: object) -> str:
+    """Extrait le(s) bloc(s) de type texte de la réponse.
+
+    reponse.content peut contenir un bloc de raisonnement (ThinkingBlock) avant
+    le bloc de texte final : ce n'est PAS toujours content[0], donc on filtre
+    explicitement par type plutôt que de supposer un index fixe.
+    """
+    blocs_texte = [bloc.text for bloc in reponse.content if getattr(bloc, "type", None) == "text"]
+    if not blocs_texte:
+        raise ErreurQualification("Réponse Claude sans bloc de texte exploitable.")
+    return "".join(blocs_texte).strip()
+
+
 def appeler_claude(prompt: str) -> str:
     """Appelle l'API Claude avec retries et timeout ; lève ErreurQualification si tout échoue."""
     client = anthropic.Anthropic(timeout=TIMEOUT_SECONDES)
@@ -63,7 +81,7 @@ def appeler_claude(prompt: str) -> str:
                 max_tokens=512,
                 messages=[{"role": "user", "content": prompt}],
             )
-            return reponse.content[0].text.strip()
+            return _extraire_texte(reponse)
         except (anthropic.APITimeoutError, anthropic.APIConnectionError, anthropic.RateLimitError) as erreur:
             derniere_erreur = erreur
             logging.warning("Appel Claude échoué (tentative %d/%d) : %s", tentative, MAX_TENTATIVES, erreur)
@@ -101,6 +119,19 @@ def parser_reponse(reponse_brute: str) -> dict[str, str]:
     }
 
 
+# Références internes à la grille de qualification elle-même (numéros
+# d'étape/test/critère du prompt), jamais des données métier hallucinées.
+# Ex. "hors périmètre au sens de l'Étape 2" ne doit pas déclencher un rejet.
+_REFERENCE_INTERNE = re.compile(r"\b(?:Étape|Test|critère)\s*\d+[a-z]?\b", re.IGNORECASE)
+
+# Chiffre "isolé" (non collé à des lettres) uniquement : un \d+ nu attraperait
+# aussi le "2" de sigles comme "B2B" (vocabulaire du prompt lui-même, pas une
+# donnée métier) — bug réel trouvé en test avec une vraie clé API sur les cas
+# CDHR/Axioncom/Ombello, où la Justification répète naturellement "cabinet de
+# conseil B2B".
+_CHIFFRE_ISOLE = re.compile(r"(?<![A-Za-z])\d+(?![A-Za-z])")
+
+
 def valider_absence_hallucination(
     resultat: dict[str, str],
     *,
@@ -110,10 +141,11 @@ def valider_absence_hallucination(
 ) -> None:
     """Vérifie que tout chiffre cité dans Effectif/Justification apparaît dans une source fournie."""
     source = f"{contenu_site} {signaux_taille} {effectif_pappers or ''}"
-    chiffres_source = set(re.findall(r"\d+", source))
+    chiffres_source = set(_CHIFFRE_ISOLE.findall(source))
 
     for champ in ("effectif", "justification"):
-        for chiffre in re.findall(r"\d+", resultat[champ]):
+        texte_sans_references = _REFERENCE_INTERNE.sub("", resultat[champ])
+        for chiffre in _CHIFFRE_ISOLE.findall(texte_sans_references):
             if chiffre not in chiffres_source:
                 raise ErreurQualification(
                     f"Chiffre halluciné détecté dans '{champ}' : {chiffre!r} n'apparaît dans aucune source fournie."

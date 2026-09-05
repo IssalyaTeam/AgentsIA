@@ -6,19 +6,38 @@ main sur l'écriture Google Sheets, la notification Slack et les retries — cet
 agent ne fait que qualifier un prospect à partir du contrat JSON défini
 ci-dessous ; il ne connaît ni Sheets ni Slack.
 
-## ⚠️ État d'avancement — non-régression à valider avec une vraie clé API
+## ✅ État d'avancement
 
 Le prompt de qualification est complet (texte verbatim du scénario Make,
 voir `engine/prompt_qualification.py`). Le pipeline est fonctionnel de bout
 en bout (scraping, extraction, appel Claude, parsing, anti-hallucination,
-endpoint HTTP) et les tests déterministes sont tous verts.
+endpoint HTTP). Les 38 tests déterministes et les 7 tests `api` (dont les 6
+cas de non-régression) sont tous verts, validés avec une vraie clé Anthropic.
 
-Les 6 tests de non-régression (`tests/test_qualification.py`, marqueur
-`@pytest.mark.api`) appellent réellement l'API Claude — ils n'ont **pas pu
-être exécutés** dans l'environnement où ce code a été écrit (pas de
-`ANTHROPIC_API_KEY` disponible). **Ne pas déployer en production avant de
-les avoir lancés avec une vraie clé** (`pytest tests/ -v -m "api"`) et
-confirmé les 6 verdicts attendus.
+Trois bugs réels trouvés et corrigés pendant cette validation (avant, tout
+échouait ou était non fiable en usage réel) :
+- **Timeout Claude trop court** (3s) : le prompt fait ~27 000 caractères une
+  fois construit, la latence réelle observée est de 6-20s selon les cas —
+  bien au-dessus de la contrainte de performance visée (≤4s/prospect,
+  scraping compris). Remonté ci-dessous en "Point d'attention".
+- **`reponse.content[0]` supposé être le texte final** : peut être un bloc de
+  raisonnement (`ThinkingBlock`) selon la réponse — `appeler_claude` filtre
+  maintenant explicitement les blocs de type texte.
+- **Faux positifs dans la validation anti-hallucination** : le "2" de
+  "cabinet de conseil B2B" (vocabulaire du prompt lui-même, répété
+  naturellement dans les Justifications) était détecté comme un chiffre
+  métier halluciné. La validation ignore désormais les chiffres collés à des
+  lettres (sigles) et les références internes à la grille ("Étape 2").
+
+### ⚠️ Point d'attention — contrainte de performance ≤4s non tenue
+
+Latence Claude seule observée : 6 à 20s selon les cas (prompt volumineux,
+~27 000 caractères). Avec le scraping en amont, le total dépasse largement
+la cible de 4s/prospect du cadrage initial. Ce n'est pas un bug côté agent —
+c'est une conséquence directe de la taille du prompt fourni. À trancher avec
+toi : réduire le prompt, accepter une latence plus réaliste (le webhook Make
+attend simplement la réponse HTTP, un peu plus lentement), ou paralléliser
+autrement.
 
 ## Architecture
 

@@ -148,6 +148,43 @@ def test_valider_absence_hallucination_accepte_chiffre_venant_de_pappers():
     valider_absence_hallucination(resultat, contenu_site="Aucun chiffre ici.", signaux_taille="", effectif_pappers=15)
 
 
+def test_valider_absence_hallucination_ignore_reference_interne_etape():
+    """Bug réel trouvé en test avec une vraie clé API : le modèle référence parfois
+    "l'Étape 2" de la grille dans sa Justification (méta-référence à la grille de
+    qualification, pas une donnée métier) — ça ne doit jamais être traité comme un
+    chiffre halluciné."""
+    resultat = {
+        "effectif": "15",
+        "verdict": "HORS ICP - Mauvaise spécialité",
+        "segment": "",
+        "signal_ia": "Non",
+        "justification": "Structure associative, hors périmètre au sens de l'Étape 2 de la grille.",
+    }
+    valider_absence_hallucination(
+        resultat, contenu_site="Association loi 1901, institut technique.", signaux_taille="", effectif_pappers=15
+    )
+
+
+def test_valider_absence_hallucination_ignore_chiffre_colle_a_des_lettres():
+    """Bug réel trouvé en test avec une vraie clé API : la Justification répète
+    souvent "cabinet de conseil B2B" (vocabulaire du prompt lui-même) — le "2"
+    de "B2B" n'est pas une donnée métier hallucinée et ne doit jamais être
+    traité comme telle."""
+    resultat = {
+        "effectif": "15",
+        "verdict": "HORS ICP - Mauvaise spécialité",
+        "segment": "",
+        "signal_ia": "Non",
+        "justification": "Association loi 1901, hors périmètre du cabinet de conseil B2B visé par la grille.",
+    }
+    valider_absence_hallucination(
+        resultat,
+        contenu_site="Le CDHR est une association loi 1901, institut technique de la filière.",
+        signaux_taille="",
+        effectif_pappers=15,
+    )
+
+
 def test_valider_absence_hallucination_rejette_chiffre_invente():
     resultat = {
         "effectif": "information non disponible",
@@ -217,7 +254,9 @@ def test_non_regression_reseaulution_bon_fit():
             "Reseaulution est un cabinet de conseil indépendant spécialisé en "
             "organisation et conduite du changement pour les entreprises de conseil "
             "et de services. Notre équipe accompagne les dirigeants dans leurs "
-            "projets de transformation, y compris l'intégration de l'IA générative."
+            "projets de transformation. Nous publions régulièrement sur les enjeux "
+            "liés à l'essor de l'intelligence artificielle générative dans les "
+            "organisations que nous accompagnons."
         ),
         effectif_pappers=18,
         objet_social_pappers="Conseil en organisation",
